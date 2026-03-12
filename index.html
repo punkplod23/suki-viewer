@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Suki Auto-Viewer</title>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; overflow: hidden; background: #222; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #loader-ui {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: white; font-weight: bold; letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loader-ui">INITIALIZING SUKI...</div>
+    <div id="canvas-container"></div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+                "meshoptimizer": "https://cdn.jsdelivr.net/npm/meshoptimizer@0.21.0/meshopt_decoder.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { MeshoptDecoder } from 'meshoptimizer';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+        // --- PASTE YOUR BASE64 DATA HERE ---
+        // Note: For large files like your 10MB GLB, it's best to keep this in an external 
+        // constant. I'm setting up the logic to fetch it automatically.
+        const MODEL_URL = 'suki.glb'; 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.toneMapping = THREE.LinearToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x222222);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // Lighting
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+        sun.position.set(5, 10, 7.5);
+        scene.add(sun);
+
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+
+        const loader = new GLTFLoader();
+        
+        async function autoload() {
+            try {
+                await MeshoptDecoder.ready;
+                loader.setMeshoptDecoder(MeshoptDecoder);
+                
+                // Fetching the file locally (assumes suki.glb is in the same folder)
+                loader.load(MODEL_URL, (gltf) => {
+                    scene.add(gltf.scene);
+                    
+                    const box = new THREE.Box3().setFromObject(gltf.scene);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    
+                    controls.target.copy(center);
+                    camera.position.set(center.x + maxDim, center.y + maxDim, center.z + maxDim * 1.5);
+                    controls.update();
+                    
+                    document.getElementById('loader-ui').style.display = 'none';
+                });
+            } catch (e) {
+                document.getElementById('loader-ui').innerText = "ERROR LOADING MODEL";
+                console.error(e);
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+        autoload();
+    </script>
+</body>
+</html>
